@@ -29,8 +29,40 @@
 	],
 	"activationEvents": [
 		"*",
-		"onCommand:gitpod.api.autoTunnel"
+		"onCommand:gitpod.api.autoTunnel",
+		"onCommand:gitpod.api.auth",
+		"onAuthenticationRequest:gitpod"
 	],
+	"contributes": {
+		"authentication": [
+			{
+				"label": "Gitpod",
+				"id": "gitpod"
+			}
+		],
+		"configuration": {
+			"title": "Settings sync",
+			"properties": {
+				"configurationSync.store": {
+					"type": "object"
+				}
+			}
+		},
+		"commands": [
+			{
+				"command": "gitpod.auth.remove",
+				"category": "Gitpod",
+				"enablement": "gitpod.addedSyncProvider",
+				"title": "Turn off Settings Sync"
+			},
+			{
+				"command": "gitpod.auth.add",
+				"category": "Gitpod",
+				"enablement": "!gitpod.addedSyncProvider",
+				"title": "Turn on Settings Sync"
+			}
+		]
+	},
 	"main": "./out/extension.js",
 	"scripts": {
 		"compile": "gulp compile-extension:gitpod",
@@ -43,9 +75,11 @@
 		"@types/tmp": "^0.2.1"
 	},
 	"dependencies": {
+		"@gitpod/gitpod-protocol": "main",
 		"@gitpod/local-app-api-grpcweb": "main",
 		"@improbable-eng/grpc-web-node-http-transport": "^0.14.0",
 		"node-fetch": "^2.6.1",
+		"pkce": "^1.0.0-beta2",
 		"tmp": "^0.2.1",
 		"vscode-nls": "^5.0.0"
 	},

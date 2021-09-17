@@ -16,6 +16,9 @@ import * as tmp from 'tmp';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { grpc } from '@improbable-eng/grpc-web';
+import { URLSearchParams } from 'url';
+
+import { registerAuth, authCompletePath, resolveAuthenticationSession, gitpodScopes, getAuthSessions, storeAuthSessions } from './auth';
 
 interface SSHConnectionParams {
 	workspaceId: string
@@ -47,6 +50,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	function log(value: string) {
 		output.appendLine(`[${new Date().toLocaleString()}] ${value}`);
 	}
+
+	registerAuth(context, log);
 
 	// TODO(ak) commands to show logs and stop local apps
 	// TODO(ak) auto stop local apps if not used for 3 hours
@@ -382,11 +387,25 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	}
 
-	const authCompletePath = '/auth-complete';
 	context.subscriptions.push(vscode.window.registerUriHandler({
 		handleUri: async uri => {
 			if (uri.path === authCompletePath) {
 				log('auth completed');
+				return;
+			} else if (uri.path === '/complete-gitpod-auth') {
+				const token = new URLSearchParams(uri.query).get('code');
+				if (token !== null) {
+					const authSession = await resolveAuthenticationSession([...gitpodScopes], token);
+					const existingSessions = await getAuthSessions(context);
+					if (authSession === null) {
+						return;
+					}
+					existingSessions.push(authSession);
+					await storeAuthSessions(existingSessions, context);
+					log('auth completed');
+				} else {
+					vscode.window.showErrorMessage('Auth failed: missing token');
+				}
 				return;
 			}
 			log('open workspace window: ' + uri.toString());
