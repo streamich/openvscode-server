@@ -55,7 +55,7 @@ const passthrough = (value: any, resolve: (value?: any) => void) => resolve(valu
  * The default adapter is the passthrough function `(value, resolve) => resolve(value)`.
  *
  * @param event the event
- * @param adapter controls resolution of the returned promise
+ * @param adapter controls the resolution of the returned promise
  * @returns a promise that resolves or rejects as specified by the adapter
  */
 function promiseFromEvent<T, U>(
