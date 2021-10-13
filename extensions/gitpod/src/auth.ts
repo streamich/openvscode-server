@@ -15,7 +15,7 @@ import ReconnectingWebSocket from 'reconnecting-websocket';
 import { ConsoleLogger, listen as doListen } from 'vscode-ws-jsonrpc';
 
 export const authCompletePath = '/auth-complete';
-const baseURL = vscode.workspace.getConfiguration('gitpod').get('authOrigin', 'https://gitpod.io');
+const getBaseURL = () => vscode.workspace.getConfiguration('gitpod').get('authOrigin', 'https://gitpod.io');
 
 type UsedGitpodFunction = ['getLoggedInUser', 'getGitpodTokenScopes'];
 type Union<Tuple extends any[], Union = never> = Tuple[number] | Union;
@@ -124,7 +124,7 @@ function promptToReload(msg?: string): void {
 		});
 }
 
-const syncStoreURL = `${baseURL}/code-sync`;
+const syncStoreURL = `${getBaseURL()}/code-sync`;
 const newConfig = {
 	url: syncStoreURL,
 	stableUrl: syncStoreURL,
@@ -242,14 +242,14 @@ async function createApiWebSocket(accessToken: string): Promise<{ gitpodService:
 			constructor(address: string, protocols?: string | string[]) {
 				super(address, protocols, {
 					headers: {
-						'Origin': baseURL,
+						'Origin': getBaseURL(),
 						'Authorization': `Bearer ${accessToken}`
 					}
 				});
 			}
 		}
 		const webSocketMaxRetries = 3;
-		const webSocket = new ReconnectingWebSocket(baseURL.replace('https', 'wss'), undefined, {
+		const webSocket = new ReconnectingWebSocket(getBaseURL().replace('https', 'wss'), undefined, {
 			minReconnectionDelay: 1000,
 			connectionTimeout: 10000,
 			maxRetries: webSocketMaxRetries,
@@ -388,7 +388,7 @@ export function registerAuth(context: vscode.ExtensionContext, logger: (value: s
 
 		const gitpodAuth = createOauth2URL({
 			clientID: `${vscode.env.uriScheme}-gitpod`,
-			authorizationURI: `${baseURL}/api/oauth/authorize`,
+			authorizationURI: `${getBaseURL()}/api/oauth/authorize`,
 			redirectURI: callbackUri,
 			scopes: [...gitpodScopes],
 		});
