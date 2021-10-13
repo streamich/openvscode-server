@@ -14,6 +14,8 @@ import WebSocket = require('ws');
 import ReconnectingWebSocket from 'reconnecting-websocket';
 import { ConsoleLogger, listen as doListen } from 'vscode-ws-jsonrpc';
 
+import GitpodAuthSession from './sessionhandler';
+
 export const authCompletePath = '/auth-complete';
 const getBaseURL = () => vscode.workspace.getConfiguration('gitpod').get('authOrigin', 'https://gitpod.io');
 
@@ -171,13 +173,12 @@ async function waitForAuthenticationSession(context: vscode.ExtensionContext): P
  * @param scopes optionally, you can specify scopes to check against
  * @returns a list of sessions that are valid
  */
-async function getValidSessions(context: vscode.ExtensionContext, scopes?: readonly string[]): Promise<vscode.AuthenticationSession[]> {
+export async function getValidSessions(context: vscode.ExtensionContext, scopes?: readonly string[]): Promise<vscode.AuthenticationSession[]> {
 	const sessions = await getAuthSessions(context);
 
 	for (const [index, session] of sessions.entries()) {
 		const availableScopes = await checkScopes(session.accessToken);
 		if (!(scopes || [...gitpodScopes]).every((scope) => availableScopes.includes(scope))) {
-			vscode.window.showErrorMessage('Token invalid.');
 			delete sessions[index];
 		}
 	}
@@ -363,6 +364,44 @@ async function askToEnable(context: vscode.ExtensionContext): Promise<void> {
 }
 
 /**
+ * Creates a user session for Settings Sync
+ * @returns a promise which resolves to an `AuthenticationSession`
+ */
+export async function createSession(scopes: readonly string[], context: vscode.ExtensionContext): Promise<vscode.AuthenticationSession> {
+	const callbackUri = await vscode.env.asExternalUri(vscode.Uri.parse(`${vscode.env.uriScheme}://gitpod.gitpod-desktop/complete-gitpod-auth`));
+
+	if (![...gitpodScopes].every((scope) => scopes.includes(scope))) {
+		vscode.window.showErrorMessage('The provided scopes are not enough to turn on Settings Sync');
+	}
+
+	const gitpodAuth = createOauth2URL({
+		clientID: `${vscode.env.uriScheme}-gitpod`,
+		authorizationURI: `${getBaseURL()}/api/oauth/authorize`,
+		redirectURI: callbackUri,
+		scopes: [...gitpodScopes],
+	});
+
+	const timeoutPromise = new Promise((_: (value: vscode.AuthenticationSession) => void, reject): void => {
+		const wait = setTimeout(() => {
+			clearTimeout(wait);
+			vscode.window.showErrorMessage('Login timed out, please try to sign in again.');
+			reject('Login timed out.');
+		}, 1000 * 60 * 5); // 5 minutes
+	});
+
+	const opened = await vscode.env.openExternal(gitpodAuth);
+	if (!opened) {
+		const selected = await vscode.window.showErrorMessage(`Couldn't open ${gitpodAuth.toString(true)} automatically, please copy and paste it to your browser manually.`, 'Copy', 'Cancel');
+		if (selected === 'Copy') {
+			vscode.env.clipboard.writeText(gitpodAuth.toString(true));
+			console.log('Copied auth URL');
+		}
+	}
+
+	return Promise.race([timeoutPromise, (await waitForAuthenticationSession(context))!]);
+}
+
+/**
  * Adds a authentication provider to the provided extension context
  * @param context the extension context to act upon and the context to which push the authentication service
  * @param logger a function used for logging outputs
@@ -379,57 +418,8 @@ export function registerAuth(context: vscode.ExtensionContext, logger: (value: s
 	});
 	context.subscriptions.push(addCmd);
 
-	async function createSession(scopes: readonly string[]): Promise<vscode.AuthenticationSession> {
-		const callbackUri = vscode.Uri.parse(`${vscode.env.uriScheme}://gitpod.gitpod-desktop/complete-gitpod-auth`);
-
-		if (![...gitpodScopes].every((scope) => scopes.includes(scope))) {
-			vscode.window.showErrorMessage('The provided scopes are not enough to turn on Settings Sync');
-		}
-
-		const gitpodAuth = createOauth2URL({
-			clientID: `${vscode.env.uriScheme}-gitpod`,
-			authorizationURI: `${getBaseURL()}/api/oauth/authorize`,
-			redirectURI: callbackUri,
-			scopes: [...gitpodScopes],
-		});
-
-		const timeoutPromise = new Promise((_: (value: vscode.AuthenticationSession) => void, reject): void => {
-			const wait = setTimeout(() => {
-				clearTimeout(wait);
-				vscode.window.showErrorMessage('Login timed out, please try to sign in again.');
-				reject('Login timed out.');
-			}, 1000 * 60 * 5); // 5 minutes
-		});
-
-		// Todo(ft): fix query encoding problems
-		const opened = await vscode.env.openExternal(gitpodAuth);
-		if (!opened) {
-			const selected = await vscode.window.showErrorMessage(`Couldn't open ${gitpodAuth.toString(true)} automatically, please copy and paste it to your browser manually.`, 'Copy', 'Cancel');
-			if (selected === 'Copy') {
-				vscode.env.clipboard.writeText(gitpodAuth.toString(true));
-				logger('Copied auth URL');
-			}
-		}
-		return Promise.race([timeoutPromise, (await waitForAuthenticationSession(context))!]);
-	}
-
-	const onDidChangeSessionsEmitter = new vscode.EventEmitter<vscode.AuthenticationProviderAuthenticationSessionsChangeEvent>();
-	context.subscriptions.push(onDidChangeSessionsEmitter);
 	logger('Registering authentication provider...');
-	context.subscriptions.push(vscode.authentication.registerAuthenticationProvider('gitpod', 'Gitpod', {
-		onDidChangeSessions: onDidChangeSessionsEmitter.event,
-		getSessions: async (scopes: string[]) => {
-			return getValidSessions(context, scopes);
-		},
-		createSession: async (scopes: string[]) => {
-			return createSession(scopes);
-		},
-		removeSession: async (sessionId) => {
-			const sessions = getAuthSessions(context);
-			const filteredSessions = (await sessions).filter((session) => session.id !== sessionId);
-			await storeAuthSessions(filteredSessions, context);
-		},
-	}, { supportsMultipleAccounts: false }));
+	context.subscriptions.push(new GitpodAuthSession(context));
 	logger('Pushed auth');
 	updateSyncContext();
 	askToEnable(context);
