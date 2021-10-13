@@ -169,7 +169,7 @@ async function waitForAuthenticationSession(context: vscode.ExtensionContext): P
  * Checks all stored auth sessions and returns all valid ones
  * @param context the VS Code extension context from which to get the sessions from
  * @param scopes optionally, you can specify scopes to check against
- * @returns a list of sessions which are valid
+ * @returns a list of sessions that are valid
  */
 async function getValidSessions(context: vscode.ExtensionContext, scopes?: readonly string[]): Promise<vscode.AuthenticationSession[]> {
 	const sessions = await getAuthSessions(context);
@@ -200,7 +200,7 @@ async function updateSyncContext() {
 }
 
 /**
- * Adds an authenthication provider as a possible provider for code sync.
+ * Adds an authentication provider as a possible provider for code sync.
  * It adds some key configuration to the user settings, so that the user can choose the Gitpod provider when deciding what to use with setting sync.
  * @param enabled - indicates whether to add or remove the configuration
  */
@@ -281,7 +281,7 @@ async function createApiWebSocket(accessToken: string): Promise<{ gitpodService:
 /**
  * Returns a promise that resolves with the current authentication session of the provided access token. This includes the token itself, the scopes, the user's ID and name.
  * @param accessToken the access token used to authenticate the Gitpod WS connection
- * @param scopes the scopes the authentication session must have
+ * @param scopes the authentication session must have
  * @returns a promise that resolves with the authentication session
  */
 export async function resolveAuthenticationSession(scopes: readonly string[], accessToken: string): Promise<vscode.AuthenticationSession | null> {
@@ -321,7 +321,7 @@ export async function checkScopes(accessToken: string): Promise<string[]> {
 }
 
 /**
- * Creates a URL to be opened for the whole Oauth2 flow to kick off
+ * Creates a URL to be opened for the whole OAuth2 flow to kick-off
  * @returns a `URL` string containing the whole auth URL
  */
 function createOauth2URL(options: { authorizationURI: string, clientID: string, redirectURI: vscode.Uri, scopes: string[] }): vscode.Uri {
@@ -363,8 +363,8 @@ async function askToEnable(context: vscode.ExtensionContext): Promise<void> {
 }
 
 /**
- * Adds a authenthication provider to the provided extension context
- * @param context the extension context to act upon and the context to which push the authenthication service
+ * Adds a authentication provider to the provided extension context
+ * @param context the extension context to act upon and the context to which push the authentication service
  * @param logger a function used for logging outputs
  */
 export function registerAuth(context: vscode.ExtensionContext, logger: (value: string) => void): void {
