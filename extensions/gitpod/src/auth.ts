@@ -15,6 +15,8 @@ import ReconnectingWebSocket from 'reconnecting-websocket';
 import { ConsoleLogger, listen as doListen } from 'vscode-ws-jsonrpc';
 
 import GitpodAuthSession from './sessionhandler';
+import fetch from 'node-fetch';
+import { URLSearchParams } from 'url';
 
 export const authCompletePath = '/auth-complete';
 const getBaseURL = () => vscode.workspace.getConfiguration('gitpod').get('authOrigin', 'https://gitpod.io');
@@ -278,16 +280,53 @@ async function createApiWebSocket(accessToken: string): Promise<{ gitpodService:
 	return { gitpodService, pendignWebSocket };
 }
 
+interface ExchangeTokenResponse {
+	token_type: 'Bearer',
+	expires_in: number
+	access_token: string,
+	refresh_token: string,
+	scope: string
+}
 
 /**
  * Returns a promise that resolves with the current authentication session of the provided access token. This includes the token itself, the scopes, the user's ID and name.
- * @param accessToken the access token used to authenticate the Gitpod WS connection
+ * @param code the access token used to authenticate the Gitpod WS connection
  * @param scopes the authentication session must have
  * @returns a promise that resolves with the authentication session
  */
-export async function resolveAuthenticationSession(scopes: readonly string[], accessToken: string): Promise<vscode.AuthenticationSession | null> {
+export async function resolveAuthenticationSession(scopes: readonly string[], code: string, context: vscode.ExtensionContext): Promise<vscode.AuthenticationSession | null> {
+
 	try {
-		const { gitpodService, pendignWebSocket } = await createApiWebSocket(accessToken);
+		console.log('Making token request with ');
+		console.log(new URLSearchParams({
+			code,
+			grant_type: 'authorization_code',
+			client_id: `${vscode.env.uriScheme}-gitpod`,
+			redirect_uri: 'vscode://gitpod.gitpod-desktop/complete-gitpod-auth',
+			code_verifier: await context.secrets.get('gitpod.code_verifier')
+		}));
+		const exchangeTokenResponse = await fetch(`${getBaseURL()}/api/oauth/token`, {
+			method: 'POST',
+			body: new URLSearchParams({
+				code,
+				grant_type: 'authorization_code',
+				client_id: `${vscode.env.uriScheme}-gitpod`,
+				redirect_uri: 'vscode://gitpod.gitpod-desktop/complete-gitpod-auth',
+				code_verifier: await context.secrets.get('gitpod.code_verifier')
+			})
+		});
+
+		if (!exchangeTokenResponse.ok) {
+			vscode.window.showErrorMessage(`Couldn't connect: ${exchangeTokenResponse.statusText}`);
+			return null;
+		}
+
+		const exchangeTokenData: ExchangeTokenResponse = await exchangeTokenResponse.json();
+		const access_token = exchangeTokenData.access_token;
+
+		console.log(access_token);
+
+		const { gitpodService, pendignWebSocket } = await createApiWebSocket(access_token);
 		const user = await gitpodService.server.getLoggedInUser();
 		(await pendignWebSocket).close();
 		return {
@@ -297,7 +336,7 @@ export async function resolveAuthenticationSession(scopes: readonly string[], ac
 				id: user.id
 			},
 			scopes: scopes,
-			accessToken: accessToken
+			accessToken: access_token
 		};
 	} catch (e) {
 		vscode.window.showErrorMessage(`Couldn't connect: ${e}`);
@@ -325,9 +364,11 @@ export async function checkScopes(accessToken: string): Promise<string[]> {
  * Creates a URL to be opened for the whole OAuth2 flow to kick-off
  * @returns a `URL` string containing the whole auth URL
  */
-function createOauth2URL(options: { authorizationURI: string, clientID: string, redirectURI: vscode.Uri, scopes: string[] }): vscode.Uri {
+async function createOauth2URL(context: vscode.ExtensionContext, options: { authorizationURI: string, clientID: string, redirectURI: vscode.Uri, scopes: string[] }): Promise<vscode.Uri> {
 	const { authorizationURI, clientID, redirectURI, scopes } = options;
-	const { codeChallenge }: { codeChallenge: string, codeVerifier: string } = create();
+	const { codeChallenge, codeVerifier }: { codeChallenge: string, codeVerifier: string } = create();
+
+	console.log(`Verifier: ${codeVerifier}`);
 
 	let query = '';
 	function set(field: string, value: string): void {
@@ -344,6 +385,7 @@ function createOauth2URL(options: { authorizationURI: string, clientID: string, 
 	set('code_challenge', codeChallenge);
 	set('code_challenge_method', 'S256');
 
+	await context.secrets.store('gitpod.code_verifier', codeVerifier);
 	return vscode.Uri.parse(authorizationURI).with({ query });
 }
 
@@ -374,7 +416,7 @@ export async function createSession(scopes: readonly string[], context: vscode.E
 		vscode.window.showErrorMessage('The provided scopes are not enough to turn on Settings Sync');
 	}
 
-	const gitpodAuth = createOauth2URL({
+	const gitpodAuth = await createOauth2URL(context, {
 		clientID: `${vscode.env.uriScheme}-gitpod`,
 		authorizationURI: `${getBaseURL()}/api/oauth/authorize`,
 		redirectURI: callbackUri,
