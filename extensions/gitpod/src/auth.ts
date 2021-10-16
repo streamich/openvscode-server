@@ -364,7 +364,7 @@ export async function checkScopes(accessToken: string): Promise<string[]> {
  * Creates a URL to be opened for the whole OAuth2 flow to kick-off
  * @returns a `URL` string containing the whole auth URL
  */
-async function createOauth2URL(context: vscode.ExtensionContext, options: { authorizationURI: string, clientID: string, redirectURI: vscode.Uri, scopes: string[] }): Promise<vscode.Uri> {
+async function createOauth2URL(context: vscode.ExtensionContext, options: { authorizationURI: string, clientID: string, redirectURI: vscode.Uri, scopes: string[] }): Promise<string> {
 	const { authorizationURI, clientID, redirectURI, scopes } = options;
 	const { codeChallenge, codeVerifier }: { codeChallenge: string, codeVerifier: string } = create();
 
@@ -379,14 +379,14 @@ async function createOauth2URL(context: vscode.ExtensionContext, options: { auth
 	}
 
 	set('client_id', clientID);
-	set('redirect_uri', redirectURI.toString());
+	set('redirect_uri', (redirectURI.toString(true)));
 	set('response_type', 'code');
 	set('scope', scopes.join(' '));
 	set('code_challenge', codeChallenge);
 	set('code_challenge_method', 'S256');
 
 	await context.secrets.store('gitpod.code_verifier', codeVerifier);
-	return vscode.Uri.parse(authorizationURI).with({ query });
+	return `${authorizationURI}?${query}`;
 }
 
 /**
@@ -411,7 +411,6 @@ async function askToEnable(context: vscode.ExtensionContext): Promise<void> {
  */
 export async function createSession(scopes: readonly string[], context: vscode.ExtensionContext): Promise<vscode.AuthenticationSession> {
 	const callbackUri = await vscode.env.asExternalUri(vscode.Uri.parse(`${vscode.env.uriScheme}://gitpod.gitpod-desktop/complete-gitpod-auth`));
-
 	if (![...gitpodScopes].every((scope) => scopes.includes(scope))) {
 		vscode.window.showErrorMessage('The provided scopes are not enough to turn on Settings Sync');
 	}
@@ -430,12 +429,12 @@ export async function createSession(scopes: readonly string[], context: vscode.E
 			reject('Login timed out.');
 		}, 1000 * 60 * 5); // 5 minutes
 	});
-
-	const opened = await vscode.env.openExternal(gitpodAuth);
+	console.log(gitpodAuth);
+	const opened = await vscode.env.openExternal(gitpodAuth as any);
 	if (!opened) {
-		const selected = await vscode.window.showErrorMessage(`Couldn't open ${gitpodAuth.toString(true)} automatically, please copy and paste it to your browser manually.`, 'Copy', 'Cancel');
+		const selected = await vscode.window.showErrorMessage(`Couldn't open ${gitpodAuth} automatically, please copy and paste it to your browser manually.`, 'Copy', 'Cancel');
 		if (selected === 'Copy') {
-			vscode.env.clipboard.writeText(gitpodAuth.toString(true));
+			vscode.env.clipboard.writeText(gitpodAuth);
 			console.log('Copied auth URL');
 		}
 	}
