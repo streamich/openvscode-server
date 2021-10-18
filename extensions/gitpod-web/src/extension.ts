@@ -8,7 +8,7 @@
 import * as workspaceInstance from '@gitpod/gitpod-protocol/lib/workspace-instance';
 import * as grpc from '@grpc/grpc-js';
 import * as fs from 'fs';
-import { GitpodPluginModel, GitpodExtensionContext, setupGitpodContext, registerTasks } from 'gitpod-shared';
+import { GitpodPluginModel, GitpodExtensionContext, setupGitpodContext, registerTasks, getAnalyticsEvent, GitpodAnalyticsEvent } from 'gitpod-shared';
 import { GetTokenRequest } from '@gitpod/supervisor-api-grpc/lib/token_pb';
 import { PortsStatus, ExposedPortInfo, PortsStatusRequest, PortsStatusResponse, PortAutoExposure, PortVisibility, OnPortExposedAction } from '@gitpod/supervisor-api-grpc/lib/status_pb';
 import { TunnelVisiblity, TunnelPortRequest, RetryAutoExposeRequest, CloseTunnelRequest } from '@gitpod/supervisor-api-grpc/lib/port_pb';
@@ -502,6 +502,7 @@ export class GitpodWorkspaceTreeDataProvider implements vscode.TreeDataProvider<
 }
 
 export function registerPorts(context: GitpodExtensionContext): void {
+	const fireAnalyticsEvent = getAnalyticsEvent(context);
 	const gitpodWorkspaceTreeDataProvider = new GitpodWorkspaceTreeDataProvider(context);
 	const workspaceView = vscode.window.createTreeView('gitpod.workspace', {
 		treeDataProvider: gitpodWorkspaceTreeDataProvider,
@@ -545,6 +546,7 @@ export function registerPorts(context: GitpodExtensionContext): void {
 	}
 	context.subscriptions.push(observePortsStatus());
 	context.subscriptions.push(vscode.commands.registerCommand('gitpod.resolveExternalPort', (portNumber: number) => {
+		// eslint-disable-next-line no-async-promise-executor
 		return new Promise<string>(async (resolve, reject) => {
 			try {
 				const tryResolve = () => {
@@ -574,24 +576,28 @@ export function registerPorts(context: GitpodExtensionContext): void {
 			}
 		});
 	}));
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.makePrivate', (port: GitpodWorkspacePort) =>
-		port.setPortVisibility('private')
-	));
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.makePublic', (port: GitpodWorkspacePort) =>
-		port.setPortVisibility('public')
-	));
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.tunnelNetwork', (port: GitpodWorkspacePort) =>
-		port.setTunnelVisibility(TunnelVisiblity.NETWORK)
-	));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.makePrivate', (port: GitpodWorkspacePort) => {
+		fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeExecuteGitpodCommandPortsMakePrivate);
+		return port.setPortVisibility('private');
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.makePublic', (port: GitpodWorkspacePort) => {
+		fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeExecuteGitpodCommandPortsMakePublic);
+		return port.setPortVisibility('public');
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.tunnelNetwork', (port: GitpodWorkspacePort) => {
+		port.setTunnelVisibility(TunnelVisiblity.NETWORK);
+	}));
 	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.tunnelHost', async (port: GitpodWorkspacePort) =>
 		port.setTunnelVisibility(TunnelVisiblity.HOST)
 	));
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.preview', (port: GitpodWorkspacePort) =>
-		openPreview(port)
-	));
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.openBrowser', (port: GitpodWorkspacePort) =>
-		port.openExternal()
-	));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.preview', (port: GitpodWorkspacePort) => {
+		fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeExecuteGitpodCommandPortsOpenPreview);
+		return openPreview(port);
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.openBrowser', (port: GitpodWorkspacePort) => {
+		fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeExecuteGitpodCommandPortsOpenBrowser);
+		return port.openExternal();
+	}));
 	context.subscriptions.push(vscode.commands.registerCommand('gitpod.ports.retryAutoExpose', async (port: GitpodWorkspacePort) => {
 		const request = new RetryAutoExposeRequest();
 		request.setPort(port.portNumber);
@@ -784,6 +790,7 @@ export function registerCLI(codeServer: GitpodCodeServer, context: GitpodExtensi
 }
 
 export function registerExtensionManagement(codeServer: GitpodCodeServer, context: GitpodExtensionContext): void {
+	const fireAnalyticsEvent = getAnalyticsEvent(context);
 	const { GitpodPluginModel, isYamlSeq, isYamlScalar } = context.config;
 	const gitpodFileUri = vscode.Uri.file(path.join(context.info.getCheckoutLocation(), '.gitpod.yml'));
 	async function modifyGipodPluginModel(unitOfWork: (model: GitpodPluginModel) => void): Promise<void> {
@@ -808,8 +815,14 @@ export function registerExtensionManagement(codeServer: GitpodCodeServer, contex
 		}
 		await vscode.workspace.applyEdit(edit);
 	}
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.extensions.addToConfig', (id: string) => modifyGipodPluginModel(model => model.add(id))));
-	context.subscriptions.push(vscode.commands.registerCommand('gitpod.extensions.removeFromConfig', (id: string) => modifyGipodPluginModel(model => model.remove(id))));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.extensions.addToConfig', (id: string) => {
+		fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeExecuteGitpodCommandAddToConfig);
+		return modifyGipodPluginModel(model => model.add(id));
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('gitpod.extensions.removeFromConfig', (id: string) => {
+		fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeExecuteGitpodCommandRemoveFromConfig);
+		return modifyGipodPluginModel(model => model.remove(id));
+	}));
 	context.subscriptions.push(vscode.commands.registerCommand('gitpod.extensions.installFromConfig', (id: string) => codeServer.connection.sendRequest('installExtensionFromConfig', id)));
 	const deprecatedUserExtensionMessage = 'user uploaded extensions are deprecated';
 	const extensionNotFoundMessageSuffix = ' extension is not found in Open VSX';

@@ -37,10 +37,36 @@ export async function setupGitpodContext(context: vscode.ExtensionContext): Prom
 	return gitpodContext;
 }
 
-function registerUsageAnalytics(context: GitpodExtensionContext): void {
-	if (context.devMode && vscode.env.uiKind === vscode.UIKind.Web) {
-		return;
-	}
+export enum GitpodAnalyticsEvent {
+	VSCodeSession = 'vscode_session',
+	VSCodeOnDidOpenTerminal = 'vscode_did_open_terminal',
+	VSCodeExecuteCommandGitpodOpenDashboard = 'vscode_execute_command_gitpod_open_dashboard',
+	VSCodeExecuteCommandGitpodOpenAccessControl = 'vscode_execute_command_gitpod_open_accesscontrol',
+	VSCodeExecuteCommandGitpodOpenSettings = 'vscode_execute_command_gitpod_open_settings',
+	VSCodeExecuteCommandGitpodOpenContext = 'vscode_execute_command_gitpod_open_context',
+	VSCodeExecuteCommandGitpodOpenDocumentation = 'vscode_execute_command_gitpod_open_documentation',
+	VSCodeExecuteCommandGitpodOpenTwitter = 'vscode_execute_command_gitpod_open_twitter',
+	VSCodeExecuteCommandGitpodOpenDiscord = 'vscode_execute_command_gitpod_open_discord',
+	VSCodeExecuteCommandGitpodOpenDiscourse = 'vscode_execute_command_gitpod_open_discourse',
+	VSCodeExecuteCommandGitpodOpenIssue = 'vscode_execute_command_gitpod_open_issue',
+	VSCodeExecuteCommandGitpodOpenInStable = 'vscode_execute_command_gitpod_open_in_stable',
+	VSCodeExecuteCommandGitpodOpenInInsiders = 'vscode_execute_command_gitpod_open_in_insiders',
+	VSCodeExecuteCommandGitpodOpenInBrowser = 'vscode_execute_command_gitpod_open_in_browser',
+	VSCodeExecuteCommandGitpodStopWorkspace = 'vscode_execute_command_gitpod_stop_workspace',
+	VSCodeExecuteCommandGitpodUpgradeSubscription = 'vscode_execute_command_gitpod_upgrade_subscription',
+	VSCodeExecuteGitpodCommandTakeSnapshot = 'vscode_execute_command_gitpod_take_snapshot',
+	VSCodeExecuteCommandGitpodShareWorkspace = 'vscode_execute_command_gitpod_share_workspace',
+	VSCodeExecuteCommandGitpodStopSharingWorkspace = 'vscode_execute_command_gitpod_stop_sharing_workspace',
+	VSCodeExecuteCommandGitpodExtendTimeout = 'vscode_execute_command_gitpod_extend_timeout',
+	VSCodeExecuteGitpodCommandPortsMakePrivate = 'vscode_execute_command_gitpod_ports_make_private',
+	VSCodeExecuteGitpodCommandPortsMakePublic = 'vscode_execute_command_gitpod_ports_make_public',
+	VSCodeExecuteGitpodCommandPortsOpenPreview = 'vscode_execute_command_gitpod_ports_open_preview',
+	VSCodeExecuteGitpodCommandPortsOpenBrowser = 'vscode_execute_command_gitpod_ports_open_browser',
+	VSCodeExecuteGitpodCommandAddToConfig = 'vscode_execute_command_gitpod_add_to_config',
+	VSCodeExecuteGitpodCommandRemoveFromConfig = 'vscode_execute_command_gitpod_remove_from_config',
+}
+
+export function getAnalyticsEvent(context: GitpodExtensionContext) {
 	const sessionId = uuid.v4();
 	const properties = {
 		sessionId,
@@ -51,19 +77,32 @@ function registerUsageAnalytics(context: GitpodExtensionContext): void {
 		devMode: context.devMode,
 		version: vscode.version,
 	};
-	function fireEvent(phase: 'start' | 'running' | 'end'): Promise<void> {
-		return context.gitpod.server.trackEvent({
-			event: 'vscode_session',
+	return function (eventName: GitpodAnalyticsEvent, phase?: 'start' | 'running' | 'end'): Promise<void> {
+		const args = {
+			event: eventName,
 			properties: {
 				...properties,
 				timestamp: Date.now(),
 				focused: vscode.window.state.focused,
 				phase,
 			}
-		});
-	}
-	fireEvent('start');
-	context.subscriptions.push(vscode.window.onDidChangeWindowState(() => fireEvent('running')));
-	context.pendingWillCloseSocket.push(() => fireEvent('end'));
+		};
+		// TODO: Consider doing this via env variable, also.
+		if (context.devMode && vscode.env.uiKind === vscode.UIKind.Web) {
+			console.log('ANALYTICS:', args);
+			return Promise.resolve();
+		} else {
+			return context.gitpod.server.trackEvent(args);
+		}
+
+	};
+}
+
+function registerUsageAnalytics(context: GitpodExtensionContext): void {
+	const fireAnalyticsEvent = getAnalyticsEvent(context);
+	fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeSession, 'start');
+	context.subscriptions.push(vscode.window.onDidChangeWindowState(() => fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeSession, 'running')));
+	context.subscriptions.push(vscode.window.onDidOpenTerminal(() => fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeOnDidOpenTerminal)));
+	context.pendingWillCloseSocket.push(() => fireAnalyticsEvent(GitpodAnalyticsEvent.VSCodeSession, 'end'));
 }
 
