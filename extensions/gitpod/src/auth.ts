@@ -252,10 +252,11 @@ async function createApiWebSocket(accessToken: string): Promise<{ gitpodService:
 			}
 		}
 		const webSocketMaxRetries = 3;
+		console.log(`Endpoint: ${getBaseURL().replace('https', 'wss')}`);
 		const webSocket = new ReconnectingWebSocket(getBaseURL().replace('https', 'wss'), undefined, {
 			minReconnectionDelay: 1000,
 			connectionTimeout: 10000,
-			maxRetries: webSocketMaxRetries,
+			maxRetries: webSocketMaxRetries - 1,
 			debug: false,
 			startClosed: false,
 			WebSocket: GitpodServerWebSocket
@@ -295,29 +296,21 @@ interface ExchangeTokenResponse {
  * @returns a promise that resolves with the authentication session
  */
 export async function resolveAuthenticationSession(scopes: readonly string[], code: string, context: vscode.ExtensionContext): Promise<vscode.AuthenticationSession | null> {
-
+	const callbackUri = (await vscode.env.asExternalUri(vscode.Uri.parse(`${vscode.env.uriScheme}://gitpod.gitpod-desktop/complete-gitpod-auth`))).toString(true);
 	try {
-		console.log('Making token request with ');
-		console.log(new URLSearchParams({
-			code,
-			grant_type: 'authorization_code',
-			client_id: `${vscode.env.uriScheme}-gitpod`,
-			redirect_uri: 'vscode://gitpod.gitpod-desktop/complete-gitpod-auth',
-			code_verifier: await context.secrets.get('gitpod.code_verifier')
-		}));
 		const exchangeTokenResponse = await fetch(`${getBaseURL()}/api/oauth/token`, {
 			method: 'POST',
 			body: new URLSearchParams({
 				code,
 				grant_type: 'authorization_code',
 				client_id: `${vscode.env.uriScheme}-gitpod`,
-				redirect_uri: 'vscode://gitpod.gitpod-desktop/complete-gitpod-auth',
+				redirect_uri: callbackUri,
 				code_verifier: await context.secrets.get('gitpod.code_verifier')
 			})
 		});
 
 		if (!exchangeTokenResponse.ok) {
-			vscode.window.showErrorMessage(`Couldn't connect: ${exchangeTokenResponse.statusText}`);
+			vscode.window.showErrorMessage(`Couldn't connect: ${exchangeTokenResponse.statusText}, ${await exchangeTokenResponse.text()}`);
 			return null;
 		}
 
